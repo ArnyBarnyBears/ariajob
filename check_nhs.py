@@ -15,19 +15,20 @@ ADMIN_CHAT_ID = os.environ["ADMIN_CHAT_ID"]
 
 SEARCH_LOCATIONS = [
     "London",
-    "Surrey",
-    "Sheffield",
+    # "Surrey",
+    # "Sheffield",
 ]
 
 SEARCH_KEYWORDS = [
     "assistant psychologist",
-    "research assistant"
+    # "research assistant"
 ]
 
 # A job matches if its title contains ANY of these strings (case-insensitive)
 TARGET_TITLES = [
-    "assistant psychologist",
-    "research assistant",
+    # "assistant psychologist",
+    # "research assistant",
+    "emergency care"
 ]
 
 # A job also matches if its employer field contains ANY of these (case-insensitive)
@@ -35,6 +36,8 @@ TARGET_EMPLOYERS = [
     "south west london and st georges mental",
     "sw17 0yf",
 ]
+
+alerted_links = set()  # tracks links we've already sent an alert for
 
 # ── Base URL builder ───────────────────────────────────────────────────────────
 
@@ -185,6 +188,7 @@ def main():
     print(f"Locations : {', '.join(SEARCH_LOCATIONS)}")
     print(f"Keywords  : {', '.join(SEARCH_KEYWORDS)}")
     print()
+    print(alerted_links)
 
     todays_jobs = get_all_todays_jobs()
     print(f"\n--- Jobs posted TODAY ({TODAY}): {len(todays_jobs)} ---\n")
@@ -192,10 +196,12 @@ def main():
     matched = [j for j in todays_jobs if is_match(j)]
     print(f"--- Matched jobs to alert: {len(matched)} ---\n")
 
-    if matched:
-        alert(f"🔍 Found {len(matched)} job alert(s) on NHS Jobs today!")
-        for job in matched:
-            print(f"  Alerting: {job['title']} | {job['employer']} ({job['search_location']})")
+    new_matched = [j for j in matched if j["link"] not in alerted_links]
+
+    if new_matched:
+        alert(f"🔍 Found {len(new_matched)} job alert(s) on NHS Jobs today!")
+        for job in new_matched:
+            print(f"  Alerting: {job['title']} | {job['employer']} ({job['search_location']}) ({job['link']})")
             msg = (
                 f"🚨 NHS Job Alert!\n\n"
                 f"{job['title']}\n"
@@ -206,12 +212,14 @@ def main():
                 f"🔗 {job['link']}"
             )
             alert(msg)
+            alerted_links.add(job["link"])
     else:
         print("No matching jobs today.")
         log("✅ NHS checker ran - no matching jobs today.")
 
 
 if __name__ == "__main__":
-    main()
-    print("Sleeping for 15 minutes...")
-    time.sleep(900)
+    while True:
+        main()
+        print("Sleeping for 15 minutes...")
+        time.sleep(5)
