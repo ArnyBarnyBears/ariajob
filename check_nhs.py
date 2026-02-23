@@ -8,39 +8,69 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]         # your friend's chat ID
-ADMIN_CHAT_ID = os.environ["ADMIN_CHAT_ID"]      # your chat ID
+CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+ADMIN_CHAT_ID = os.environ["ADMIN_CHAT_ID"]
 
-BASE_URL = (
-    "https://beta.jobs.nhs.uk/candidate/search/results"
-    "?keyword=assistant+psychologist"
-    "&location=London"
-    "&skipPhraseSuggester=true"
-    "&searchFormType=sortBy"
-    "&sort=publicationDateDesc"
-    "&language=en"
-)
+# ── Customise these ────────────────────────────────────────────────────────────
 
-TODAY = datetime.today().strftime("%-d %B %Y")  # e.g. "23 February 2026"
+SEARCH_LOCATIONS = [
+    "London",
+    "Surrey",
+    "Sheffield",
+]
 
-# Alert if job title contains this (case-insensitive)
-TARGET_TITLE = "team leader"
-# Alert if employer/location contains either of these (case-insensitive)
+SEARCH_KEYWORDS = [
+    "assistant psychologist",
+    "research assistant"
+]
+
+# A job matches if its title contains ANY of these strings (case-insensitive)
+TARGET_TITLES = [
+    "assistant psychologist",
+    "research assistant",
+]
+
+# A job also matches if its employer field contains ANY of these (case-insensitive)
 TARGET_EMPLOYERS = [
-    "south west london and st georges mental",  # partial match, handles small typos in NHS listing
+    "south west london and st georges mental",
     "sw17 0yf",
 ]
 
+# ── Base URL builder ───────────────────────────────────────────────────────────
+
+def build_urls():
+    """Return one search URL per keyword/location combination."""
+    urls = []
+    for keyword in SEARCH_KEYWORDS:
+        for location in SEARCH_LOCATIONS:
+            url = (
+                "https://beta.jobs.nhs.uk/candidate/search/results"
+                f"?keyword={keyword.replace(' ', '+')}"
+                "&skipPhraseSuggester=true"
+                "&searchFormType=sortBy"
+                "&sort=publicationDateDesc"
+                "&language=en"
+                f"&location={location.replace(' ', '+')}"
+            )
+            urls.append((keyword, location, url))
+    return urls
+
+# ── Matching ───────────────────────────────────────────────────────────────────
 
 def is_match(job):
-    title_match = TARGET_TITLE in job["title"].lower()
+    title_lower = job["title"].lower()
     employer_lower = job["employer"].lower()
+    title_match = any(t in title_lower for t in TARGET_TITLES)
     employer_match = any(t in employer_lower for t in TARGET_EMPLOYERS)
     return title_match or employer_match
 
+# ── Scraping ───────────────────────────────────────────────────────────────────
 
-def fetch_page(page):
-    url = f"{BASE_URL}&page={page}&_cb={int(time.time())}"
+TODAY = datetime.today().strftime("%-d %B %Y")  # e.g. "23 February 2026"
+
+
+def fetch_page(base_url, page):
+    url = f"{base_url}&page={page}&_cb={int(time.time())}"
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; job-alert-bot/1.0)",
         "Cache-Control": "no-cache",
@@ -88,32 +118,52 @@ def parse_jobs(html):
     return jobs
 
 
-def get_all_todays_jobs():
+def get_todays_jobs_for_location(base_url, location):
     todays_jobs = []
     page = 1
 
     while True:
-        print(f"Fetching page {page}...")
-        html = fetch_page(page)
+        print(f"  [{location}] Fetching page {page}...")
+        html = fetch_page(base_url, page)
         jobs = parse_jobs(html)
 
         if not jobs:
-            print(f"  No jobs on page {page}, stopping.")
+            print(f"  [{location}] No jobs on page {page}, stopping.")
             break
 
+        hit_old = False
         for job in jobs:
-            print(f"  [{job['date_posted']}] {job['title']} | {job['employer']}")
             if job["date_posted"] == TODAY:
-                todays_jobs.append(job)
+                todays_jobs.append({**job, "search_location": location})
             else:
-                print(f"  Hit older job, stopping pagination.")
-                return todays_jobs
+                hit_old = True
+                break
+
+        if hit_old:
+            print(f"  [{location}] Hit older job, stopping pagination.")
+            break
 
         page += 1
         time.sleep(1)
 
     return todays_jobs
 
+
+def get_all_todays_jobs():
+    all_jobs = []
+    seen_links = set()
+
+    for keyword, location, url in build_urls():
+        jobs = get_todays_jobs_for_location(url, location)
+        for job in jobs:
+            if job["link"] not in seen_links:   # deduplicate across locations
+                seen_links.add(job["link"])
+                all_jobs.append(job)
+        time.sleep(2)
+
+    return all_jobs
+
+# ── Telegram ───────────────────────────────────────────────────────────────────
 
 def send_telegram(msg, chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -122,40 +172,34 @@ def send_telegram(msg, chat_id):
     return resp
 
 def alert(msg):
-    """Send to both friend and admin."""
     send_telegram(msg, CHAT_ID)
     send_telegram(msg, ADMIN_CHAT_ID)
 
 def log(msg):
-    """Send only to admin (monitoring/status messages)."""
     send_telegram(msg, ADMIN_CHAT_ID)
 
+# ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
     print(f"Checking NHS Jobs... (today is {TODAY})")
+    print(f"Locations : {', '.join(SEARCH_LOCATIONS)}")
+    print(f"Keywords  : {', '.join(SEARCH_KEYWORDS)}")
+    print()
 
     todays_jobs = get_all_todays_jobs()
     print(f"\n--- Jobs posted TODAY ({TODAY}): {len(todays_jobs)} ---\n")
 
-    # Debug: print everything posted today before filtering
-    for job in todays_jobs:
-        print(f"  Title    : {job['title']}")
-        print(f"  Employer : {job['employer']}")
-        print(f"  Match?   : {is_match(job)}")
-        print()
-
-    # Filter and alert
     matched = [j for j in todays_jobs if is_match(j)]
     print(f"--- Matched jobs to alert: {len(matched)} ---\n")
 
     if matched:
-        # Send one summary telegram first so we know it's working
         alert(f"🔍 Found {len(matched)} job alert(s) on NHS Jobs today!")
         for job in matched:
-            print(f"  Alerting: {job['title']} | {job['employer']}")
+            print(f"  Alerting: {job['title']} | {job['employer']} ({job['search_location']})")
             msg = (
                 f"🚨 NHS Job Alert!\n\n"
                 f"{job['title']}\n"
+                f"📍 Search area: {job['search_location']}\n"
                 f"🏥 {job['employer']}\n"
                 f"💰 {job['salary']}\n"
                 f"📅 Closes: {job['closing']}\n"
@@ -164,7 +208,6 @@ def main():
             alert(msg)
     else:
         print("No matching jobs today.")
-        # Uncomment the line below to test your Telegram is working:
         log("✅ NHS checker ran - no matching jobs today.")
 
 
