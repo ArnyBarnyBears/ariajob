@@ -170,3 +170,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    print("Sleeping for 15 minutes...")
+    time.sleep(900)
