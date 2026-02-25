@@ -72,9 +72,6 @@ def is_match(job):
 
 # ── Scraping ───────────────────────────────────────────────────────────────────
 
-TODAY = datetime.today().strftime("%-d %B %Y")  # e.g. "23 February 2026"
-
-
 def fetch_page(base_url, page):
     url = f"{base_url}&page={page}&_cb={int(time.time())}"
     headers = {
@@ -124,7 +121,7 @@ def parse_jobs(html):
     return jobs
 
 
-def get_todays_jobs_for_location(base_url, location):
+def get_todays_jobs_for_location(base_url, location, today_str):
     todays_jobs = []
     page = 1
 
@@ -137,9 +134,12 @@ def get_todays_jobs_for_location(base_url, location):
             print(f"  [{location}] No jobs on page {page}, stopping.")
             break
 
+        for i, job in enumerate(jobs, 1):
+            print(f"    {i}. {job['title']} | {job['employer']} | Posted: {job['date_posted']}")
+
         hit_old = False
         for job in jobs:
-            if job["date_posted"] == TODAY:
+            if job["date_posted"] == today_str:
                 todays_jobs.append({**job, "search_location": location})
             else:
                 hit_old = True
@@ -155,12 +155,12 @@ def get_todays_jobs_for_location(base_url, location):
     return todays_jobs
 
 
-def get_all_todays_jobs():
+def get_all_todays_jobs(today_str):
     all_jobs = []
     seen_links = set()
 
     for keyword, location, url in build_urls():
-        jobs = get_todays_jobs_for_location(url, location)
+        jobs = get_todays_jobs_for_location(url, location, today_str)
         for job in jobs:
             if job["link"] not in seen_links:   # deduplicate across locations
                 seen_links.add(job["link"])
@@ -187,13 +187,21 @@ def log(msg):
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    print(f"Checking NHS Jobs... (today is {TODAY})")
+    now = datetime.now()
+    current_time_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    today_str = now.strftime("%-d %B %Y")
+
+    print(f"\n========================================================")
+    print(f"[{current_time_str}] Checking NHS Jobs...")
+    print(f"Looking for target date : {today_str}")
     print(f"Locations : {', '.join(SEARCH_LOCATIONS)}")
     print(f"Keywords  : {', '.join(SEARCH_KEYWORDS)}")
-    print()
+    print(f"========================================================\n")
 
-    todays_jobs = get_all_todays_jobs()
-    print(f"\n--- Jobs posted TODAY ({TODAY}): {len(todays_jobs)} ---\n")
+    # NEW: Pass today_str into the scraper
+    todays_jobs = get_all_todays_jobs(today_str)
+
+    print(f"\n--- Jobs posted TODAY ({today_str}): {len(todays_jobs)} ---\n")
 
     matched = [j for j in todays_jobs if is_match(j)]
     print(f"--- Matched jobs to alert: {len(matched)} ---\n")
