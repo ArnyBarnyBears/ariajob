@@ -129,7 +129,7 @@ def get_todays_jobs_for_location(base_url, location, today_str):
         print(f"  [{location}] Fetching page {page}...")
         html = fetch_page(base_url, page)
         jobs = parse_jobs(html)
-
+        time.sleep(0.1)
         if not jobs:
             print(f"  [{location}] No jobs on page {page}, stopping.")
             break
@@ -150,7 +150,7 @@ def get_todays_jobs_for_location(base_url, location, today_str):
             break
 
         page += 1
-        time.sleep(1)
+        time.sleep(0.9)
 
     return todays_jobs
 
@@ -162,7 +162,8 @@ def get_all_todays_jobs(today_str):
     for keyword, location, url in build_urls():
         jobs = get_todays_jobs_for_location(url, location, today_str)
         for job in jobs:
-            if job["link"] not in seen_links:   # deduplicate across locations
+            job["link"] = clean_link(job["link"])
+            if job["link"] not in seen_links:
                 seen_links.add(job["link"])
                 all_jobs.append(job)
         time.sleep(2)
@@ -206,7 +207,7 @@ def main():
     matched = [j for j in todays_jobs if is_match(j)]
     print(f"--- Matched jobs to alert: {len(matched)} ---\n")
 
-    new_matched = [j for j in matched if clean_link(j["link"]) not in alerted_links]
+    new_matched = [j for j in matched if j["link"] not in alerted_links]
 
     if new_matched:
         alert(f"🔍 Found {len(new_matched)} job alert(s) on NHS Jobs today!")
@@ -222,7 +223,7 @@ def main():
                 f"🔗 {job['link']}"
             )
             alert(msg)
-            alerted_links.add(clean_link(job["link"]))
+            alerted_links.add(job["link"])
     else:
         print("No matching jobs today.")
         log("✅ NHS checker ran - no matching jobs today.")
@@ -230,6 +231,11 @@ def main():
 
 if __name__ == "__main__":
     while True:
-        main()
+        try:
+            main()
+        except Exception as e:
+            print(f"❌ An unexpected error occurred: {e}")
+            log(f"⚠️ NHS Scraper encountered an error: {e}")
+            
         print("Sleeping for 15 minutes...")
         time.sleep(900)
