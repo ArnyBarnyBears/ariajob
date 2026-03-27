@@ -16,23 +16,32 @@ ADMIN_CHAT_ID = os.environ["ADMIN_CHAT_ID"]
 # (location, distance_miles) — use None for no distance param
 SEARCH_LOCATIONS = [
     ("London",      None),
-    ("Sheffield",   25),
-    ("Leeds",       25),
-    ("Manchester",  25),
-    ("Rotherham",   25),
-    ("Nottingham",  25),
-    ("Derby",       25),
-    ("Doncaster",   25),
-    ("Guildford",   25),
-    ("Dorking",     25),
-    ("Epsom",       25),
+    ("Sheffield",   15),
+    ("Leeds",       15),
+    ("Manchester",  15),
+    ("Rotherham",   15),
+    ("Nottingham",  15),
+    ("Derby",       15),
+    ("Doncaster",   15),
+    ("Guildford",   10),
+    ("Dorking",     10),
+    ("Epsom",       10),
 ]
 
-# A job matches if its title contains ANY of these strings (case-insensitive)
-TARGET_TITLES = [
+# London + Surrey get the full title list; northern locations are more selective
+LONDON_SURREY = {"London", "Guildford", "Dorking", "Epsom"}
+
+TITLES_LONDON_SURREY = [
     "mental health support worker",
     "healthcare assistant",
     "health care assistant",     # split spelling
+    "social worker",
+    "rehabilitation assistant",
+    "research assistant",
+    "assistant psychologist",
+]
+
+TITLES_NORTH = [
     "social worker",
     "rehabilitation assistant",
     "research assistant",
@@ -75,7 +84,8 @@ def build_urls():
 def is_match(job):
     title_lower = job["title"].lower()
     employer_lower = job["employer"].lower()
-    title_match = any(t in title_lower for t in TARGET_TITLES)
+    titles = TITLES_LONDON_SURREY if job.get("search_location") in LONDON_SURREY else TITLES_NORTH
+    title_match = any(t in title_lower for t in titles)
     employer_match = any(t in employer_lower for t in TARGET_EMPLOYERS)
     return title_match or employer_match
 
@@ -205,7 +215,8 @@ def main():
     print(f"[{current_time_str}] Checking NHS Jobs...")
     print(f"Looking for target date : {today_str}")
     print(f"Locations : {', '.join(loc for loc, _ in SEARCH_LOCATIONS)}")
-    print(f"Titles    : {', '.join(TARGET_TITLES)}")
+    print(f"Titles (London/Surrey) : {', '.join(TITLES_LONDON_SURREY)}")
+    print(f"Titles (North)         : {', '.join(TITLES_NORTH)}")
     print(f"========================================================\n")
 
     # NEW: Pass today_str into the scraper
