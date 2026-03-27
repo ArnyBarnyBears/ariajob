@@ -13,21 +13,30 @@ ADMIN_CHAT_ID = os.environ["ADMIN_CHAT_ID"]
 
 # ── Customise these ────────────────────────────────────────────────────────────
 
+# (location, distance_miles) — use None for no distance param
 SEARCH_LOCATIONS = [
-    "London",
-    "Surrey",
-    "Sheffield",
-]
-
-SEARCH_KEYWORDS = [
-    "assistant psychologist",
-    "research assistant"
+    ("London",      None),
+    ("Sheffield",   25),
+    ("Leeds",       25),
+    ("Manchester",  25),
+    ("Rotherham",   25),
+    ("Nottingham",  25),
+    ("Derby",       25),
+    ("Doncaster",   25),
+    ("Guildford",   25),
+    ("Dorking",     25),
+    ("Epsom",       25),
 ]
 
 # A job matches if its title contains ANY of these strings (case-insensitive)
 TARGET_TITLES = [
-    "assistant psychologist",
+    "mental health support worker",
+    "healthcare assistant",
+    "health care assistant",     # split spelling
+    "social worker",
+    "rehabilitation assistant",
     "research assistant",
+    "assistant psychologist",
 ]
 
 # A job also matches if its employer field contains ANY of these (case-insensitive)
@@ -45,20 +54,20 @@ def clean_link(link):
 # ── Base URL builder ───────────────────────────────────────────────────────────
 
 def build_urls():
-    """Return one search URL per keyword/location combination."""
+    """Return one search URL per location (no keyword — filtered locally)."""
     urls = []
-    for keyword in SEARCH_KEYWORDS:
-        for location in SEARCH_LOCATIONS:
-            url = (
-                "https://beta.jobs.nhs.uk/candidate/search/results"
-                f"?keyword={keyword.replace(' ', '+')}"
-                "&skipPhraseSuggester=true"
-                "&searchFormType=sortBy"
-                "&sort=publicationDateDesc"
-                "&language=en"
-                f"&location={location.replace(' ', '+')}"
-            )
-            urls.append((keyword, location, url))
+    for location, distance in SEARCH_LOCATIONS:
+        url = (
+            "https://beta.jobs.nhs.uk/candidate/search/results"
+            f"?location={location.replace(' ', '+')}"
+            "&searchFormType=sortBy"
+            "&sort=publicationDateDesc"
+            "&searchByLocationOnly=true"
+            "&language=en"
+        )
+        if distance:
+            url += f"&distance={distance}"
+        urls.append((location, url))
     return urls
 
 # ── Matching ───────────────────────────────────────────────────────────────────
@@ -159,7 +168,7 @@ def get_all_todays_jobs(today_str):
     all_jobs = []
     seen_links = set()
 
-    for keyword, location, url in build_urls():
+    for location, url in build_urls():
         jobs = get_todays_jobs_for_location(url, location, today_str)
         for job in jobs:
             job["link"] = clean_link(job["link"])
@@ -195,8 +204,8 @@ def main():
     print(f"\n========================================================")
     print(f"[{current_time_str}] Checking NHS Jobs...")
     print(f"Looking for target date : {today_str}")
-    print(f"Locations : {', '.join(SEARCH_LOCATIONS)}")
-    print(f"Keywords  : {', '.join(SEARCH_KEYWORDS)}")
+    print(f"Locations : {', '.join(loc for loc, _ in SEARCH_LOCATIONS)}")
+    print(f"Titles    : {', '.join(TARGET_TITLES)}")
     print(f"========================================================\n")
 
     # NEW: Pass today_str into the scraper
